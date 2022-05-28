@@ -8,7 +8,7 @@ mod simulation;
 const SIMULATION_WIDTH: f32 = 1.0;
 const DX: f32 = 0.001;
 const DT: f32 = 1.0 / 60.0;
-const WAVE_SPEED: f32 = 0.05;
+const C: f32 = 0.05;
 
 struct Game {
     camera: Camera,
@@ -16,7 +16,6 @@ struct Game {
     renderer: Renderer,
     tick_time: f32,
 }
-
 fn main() {
     App::<Game>::new();
 }
@@ -34,7 +33,7 @@ impl colosseum::Game for Game {
             .transform_mut()
             .set_position(Vector3::new(0.0, 0.0, 1.0));
 
-        let simulation = Simulation::new(SIMULATION_WIDTH, DX, WAVE_SPEED);
+        let simulation = Simulation::new(SIMULATION_WIDTH, DX, window);
         let renderer = Renderer::new(&simulation, window);
 
         Game {
@@ -50,11 +49,11 @@ impl colosseum::Game for Game {
 
         if self.tick_time >= DT {
             while self.tick_time >= DT {
-                self.simulation.update(DT);
+                self.simulation.update(window);
                 self.tick_time -= DT;
             }
 
-            self.renderer.update(&self.simulation, window);
+            self.renderer.update(&mut self.simulation, window);
         }
     }
 

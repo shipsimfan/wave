@@ -1,20 +1,19 @@
 use crate::simulation::Simulation;
-use colosseum::{Input, Mesh, MeshRenderer, Vertex, Window};
+use colosseum::{Input, Vertex, Window};
 
 pub struct Renderer {
-    vertices: Box<[Vertex]>,
-    mesh_renderer: MeshRenderer,
+    mesh: alexandria::LineMesh<Vertex>,
 }
 
 impl Renderer {
     pub fn new<I: Input>(simulation: &Simulation, window: &mut Window<I>) -> Self {
-        let mut vertices = Vec::with_capacity(simulation.wave().len());
+        let mut vertices = Vec::with_capacity(simulation.num_points());
 
-        let base = -(simulation.width() / 2.0);
-        for i in 0..simulation.wave().len() {
+        let base = -0.5;
+        for i in 0..simulation.num_points() {
             vertices.push(Vertex::new(
-                base + i as f32 * simulation.dx(),
-                simulation.wave()[i],
+                base + (i as f32) * 0.001,
+                0.0,
                 0.0,
                 1.0,
                 1.0,
@@ -25,24 +24,19 @@ impl Renderer {
             ));
         }
 
-        let mesh_renderer = MeshRenderer::new(Mesh::new_line(&vertices, true, window));
+        let mesh = alexandria::LineMesh::new(vertices.as_slice(), true, window.inner()).unwrap();
 
-        Renderer {
-            vertices: vertices.into_boxed_slice(),
-            mesh_renderer,
-        }
+        Renderer { mesh }
     }
 
-    pub fn update<I: Input>(&mut self, simulation: &Simulation, window: &mut Window<I>) {
-        for i in 0..simulation.wave().len() {
-            self.vertices[i].position_mut().set_y(simulation.wave()[i]);
-        }
-
-        self.mesh_renderer
-            .set_mesh(Mesh::new_line(&self.vertices, true, window));
+    pub fn update<I: Input>(&mut self, simulation: &mut Simulation, window: &mut Window<I>) {
+        window
+            .inner()
+            .device_context()
+            .copy_resource(self.mesh.buffer(), simulation.wave_buffer());
     }
 
     pub fn render<I: Input>(&mut self, window: &mut Window<I>) {
-        self.mesh_renderer.render(window);
+        self.mesh.render(window.inner());
     }
 }
