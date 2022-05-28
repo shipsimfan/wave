@@ -33,8 +33,8 @@ uint index(uint x, uint y) {
 [numthreads(16,16,1)]
 void compute_main(uint3 tid : SV_DispatchThreadID) {
     uint idx = index(tid.x, tid.y);
-    uint x_u_index = index(tid.x + 1, tid.y);
-    uint x_l_index = index(tid.x - 1, tid.y);
+    uint x_u_index = tid.x == NUM_POINTS_X - 1 ? 0.0 : index(tid.x + 1, tid.y);
+    uint x_l_index = tid.x == 0 ? 0.0 : index(tid.x - 1, tid.y);
     uint y_u_index = index(tid.x, tid.y + 1);
     uint y_l_index = index(tid.x, tid.y - 1);
 
