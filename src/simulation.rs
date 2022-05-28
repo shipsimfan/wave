@@ -1,5 +1,4 @@
 use colosseum::{Input, Vertex, Window};
-use std::f32::consts::PI;
 
 enum CurrentWave {
     Wave1,
@@ -10,13 +9,23 @@ enum CurrentWave {
 #[repr(C)]
 struct Settings {
     r: f32,
-    color_mod: f32,
-    dt: f32,
     dx: f32,
+    dy: f32,
+    dt: f32,
+
+    color_mod: f32,
+    num_points_x: u32,
+    num_points_y: u32,
+    reserved: f32,
 }
 
 pub struct Simulation {
-    num_points: usize,
+    num_points_x: usize,
+    num_points_y: usize,
+    width: f32,
+    height: f32,
+    dx: f32,
+    dy: f32,
     current_wave: CurrentWave,
 
     // Wave buffers
@@ -32,44 +41,62 @@ pub struct Simulation {
 }
 
 impl Simulation {
-    pub fn new<I: Input>(width: f32, dx: f32, dt: f32, r: f32, window: &mut Window<I>) -> Self {
-        let num_points = (width / dx).round() as usize + 1;
+    pub fn new<I: Input>(
+        num_points_x: usize,
+        dx: f32,
+        num_points_y: usize,
+        dy: f32,
+        dt: f32,
+        c: f32,
+        window: &mut Window<I>,
+    ) -> Self {
+        assert_eq!(num_points_x % 16, 0);
+        assert_eq!(num_points_y % 16, 0);
 
-        assert!(num_points % 64 == 0);
+        let width = ((num_points_x - 1) as f32) * dx;
+        let height = ((num_points_y - 1) as f32) * dy;
 
         let shader_code = include_str!("compute.hlsl");
         let compute_shader =
             alexandria::compute::ComputeShader::new(shader_code, window.inner()).unwrap();
 
-        let mut vertices = Vec::with_capacity(num_points);
-        let base = -(width / 2.0);
-        for i in 0..num_points {
-            let x = base + i as f32 * dx;
-            let y = if x < -0.15 || x > 0.15 {
-                0.0
-            } else {
-                (10.0 * PI * x).cos() * 0.2
-            };
+        let mut vertices = Vec::with_capacity(num_points_x * num_points_y);
+        let base_x = -(width / 2.0);
+        let base_y = -(height / 2.0);
+        for y in 0..num_points_y {
+            for x in 0..num_points_x {
+                let x = base_x + x as f32 * dx;
+                let z = base_y + y as f32 * dy;
 
-            vertices.push(Vertex::new(x, y, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0));
+                let y = 0.1;
+
+                vertices.push(Vertex::new(x, y, z, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0));
+            }
         }
 
         let wave1 = alexandria::compute::RWBuffer::new(&vertices, 1, window.inner()).unwrap();
         let wave2 = alexandria::compute::RWBuffer::new(&vertices, 2, window.inner()).unwrap();
         let wave3 = alexandria::compute::RWBuffer::new(&vertices, 0, window.inner()).unwrap();
 
-        println!("R: {}", r);
-
         let settings = Settings {
-            r,
-            color_mod: 3.0,
-            dt,
+            r: c * c * dt * dt,
             dx,
+            dy,
+            dt,
+            color_mod: 3.0,
+            num_points_x: num_points_x as u32,
+            num_points_y: num_points_y as u32,
+            reserved: 0.0,
         };
         let settings = alexandria::ConstantBuffer::new(Some(settings), 0, window.inner()).unwrap();
 
         Simulation {
-            num_points,
+            num_points_x,
+            num_points_y,
+            width,
+            height,
+            dx,
+            dy,
             current_wave: CurrentWave::Wave1,
             compute_shader,
             wave1,
@@ -79,8 +106,28 @@ impl Simulation {
         }
     }
 
-    pub fn num_points(&self) -> usize {
-        self.num_points
+    pub fn num_points_x(&self) -> usize {
+        self.num_points_x
+    }
+
+    pub fn num_points_y(&self) -> usize {
+        self.num_points_y
+    }
+
+    pub fn width(&self) -> f32 {
+        self.width
+    }
+
+    pub fn height(&self) -> f32 {
+        self.height
+    }
+
+    pub fn dx(&self) -> f32 {
+        self.dx
+    }
+
+    pub fn dy(&self) -> f32 {
+        self.dy
     }
 
     pub fn update<I: Input>(&mut self, window: &mut Window<I>) {
@@ -89,8 +136,12 @@ impl Simulation {
         self.wave2.set_active(window.inner());
         self.wave3.set_active(window.inner());
         self.settings.set_active_compute(window.inner());
-        self.compute_shader
-            .dispatch(self.num_points / 64, 1, 1, window.inner());
+        self.compute_shader.dispatch(
+            self.num_points_x / 16,
+            self.num_points_y / 16,
+            1,
+            window.inner(),
+        );
 
         self.set_next_wave()
     }
