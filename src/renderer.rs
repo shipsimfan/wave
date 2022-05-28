@@ -30,10 +30,11 @@ impl Renderer {
     }
 
     pub fn update<I: Input>(&mut self, simulation: &mut Simulation, window: &mut Window<I>) {
-        window
-            .inner()
-            .device_context()
-            .copy_resource(self.mesh.buffer(), simulation.wave_buffer());
+        alexandria::compute::copy_compute_to_vertex_line(
+            simulation.current_wave(),
+            &mut self.mesh,
+            window.inner(),
+        );
     }
 
     pub fn render<I: Input>(&mut self, window: &mut Window<I>) {

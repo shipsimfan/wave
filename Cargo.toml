@@ -8,4 +8,3 @@ version = "0.1.0"
 [dependencies]
 alexandria = {git = "https://github.com/shipsimfan/alexandria.git"}
 colosseum = {git = "https://github.com/shipsimfan/colosseum.git"}
-win32 = {git = "https://github.com/shipsimfan/lib-win32.git", branch = "main"}

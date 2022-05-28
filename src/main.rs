@@ -6,9 +6,12 @@ mod renderer;
 mod simulation;
 
 const SIMULATION_WIDTH: f32 = 1.0;
-const DX: f32 = 0.001;
-const DT: f32 = 1.0 / 60.0;
+const DX: f32 = 1.0 / 639.0;
+const FRAME_TIME: f32 = 1.0 / 60.0;
+const SUB_STEPS: f32 = 1.0;
+const DT: f32 = FRAME_TIME / SUB_STEPS;
 const C: f32 = 0.05;
+const R: f32 = (C * DT / DX) * (C * DT / DX);
 
 struct Game {
     camera: Camera,
@@ -33,7 +36,7 @@ impl colosseum::Game for Game {
             .transform_mut()
             .set_position(Vector3::new(0.0, 0.0, 1.0));
 
-        let simulation = Simulation::new(SIMULATION_WIDTH, DX, window);
+        let simulation = Simulation::new(SIMULATION_WIDTH, DX, DT, R, window);
         let renderer = Renderer::new(&simulation, window);
 
         Game {
