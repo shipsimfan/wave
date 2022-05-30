@@ -21,8 +21,8 @@ RWStructuredBuffer<Vertex> previous_wave : register(u0);
 RWStructuredBuffer<Vertex> current_wave : register(u1);
 RWStructuredBuffer<Vertex> next_wave : register(u2);
 
-float4 speed_to_color(float speed) {
-    float value = saturate(3.0 * abs(speed));
+float4 f_to_color(float f) {
+    float value = saturate(f + 0.5);
     return float4(value, 0, 1.0 - value, 1.0);
 }
 
@@ -55,7 +55,7 @@ void compute_main(uint3 tid : SV_DispatchThreadID) {
     float f_new = f_now_2 - f_prev + R * (f_x + f_y);
 
     // Set new value
-    next_wave[idx].color = speed_to_color((f_now - f_new) / DT);
+    next_wave[idx].color = f_to_color(f_new);
     next_wave[idx].position.y = f_new;
 }
 
