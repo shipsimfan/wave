@@ -1,41 +1,31 @@
-use colosseum::App;
 use observer::Observer;
 use renderer::Renderer;
-use simulation::Simulation;
+use simulation_runner::SimulationRunner;
+use std::marker::PhantomData;
 
 mod observer;
 mod renderer;
 mod simulation;
+mod simulation_runner;
 
-const DX: f32 = 1.0 / (NUM_POINTS_X as f32 - 1.0);
-const DY: f32 = DX;
+pub use simulation::Simulation;
 
-const NUM_POINTS_X: usize = 256;
-const NUM_POINTS_Y: usize = NUM_POINTS_X;
-
-const FRAME_TIME: f32 = 1.0 / 60.0;
-const SUB_STEPS: f32 = 1.0;
-const DT: f32 = FRAME_TIME / SUB_STEPS;
-
-const C: f32 = 0.05;
-
-pub struct Game {
+struct Game<S: Simulation> {
     observer: Observer,
-    simulation: Simulation,
+    simulation: SimulationRunner,
     renderer: Renderer,
     tick_time: f32,
+    phantom: PhantomData<S>,
 }
 
-fn main() {
-    App::<Game>::new();
-}
+pub fn run<S: Simulation>(simulation: S) {}
 
-impl colosseum::Game for Game {
+impl<S: Simulation> colosseum::Game for Game<S> {
     const INITIAL_TITLE: &'static str = "Wave Simulator";
 
     fn new(window: &mut colosseum::Window<Self::Input>) -> Self {
-        let simulation = Simulation::new(NUM_POINTS_X, DX, NUM_POINTS_Y, DY, DT, C, window);
-        let renderer = Renderer::new(&simulation, NUM_POINTS_X, NUM_POINTS_Y, window);
+        let simulation = SimulationRunner::new(0, 0.0, 0, 0.0, 0.0, 0.0, window);
+        let renderer = Renderer::new(&simulation, 0, 0, window);
         let observer = Observer::new(window);
 
         Game {
@@ -43,6 +33,7 @@ impl colosseum::Game for Game {
             simulation,
             renderer,
             tick_time: 0.0,
+            phantom: PhantomData,
         }
     }
 
@@ -52,10 +43,10 @@ impl colosseum::Game for Game {
 
         // Physics update
         self.tick_time += delta_time;
-        if self.tick_time >= DT {
-            while self.tick_time >= DT {
+        if self.tick_time >= 0.0 {
+            while self.tick_time >= 0.0 {
                 self.simulation.update(window);
-                self.tick_time -= DT;
+                self.tick_time -= 0.0;
             }
 
             self.renderer.update(&mut self.simulation, window);

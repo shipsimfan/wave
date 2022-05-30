@@ -1,4 +1,4 @@
-use crate::simulation::Simulation;
+use crate::simulation_runner::SimulationRunner;
 use colosseum::{Input, Vertex, Window};
 
 pub struct Renderer {
@@ -9,7 +9,7 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new<I: Input>(
-        simulation: &Simulation,
+        simulation: &SimulationRunner,
         num_points_x: usize,
         num_points_y: usize,
         window: &mut Window<I>,
@@ -69,7 +69,7 @@ impl Renderer {
         }
     }
 
-    pub fn update<I: Input>(&mut self, simulation: &mut Simulation, window: &mut Window<I>) {
+    pub fn update<I: Input>(&mut self, simulation: &mut SimulationRunner, window: &mut Window<I>) {
         window.inner().device_context().flush();
         window
             .inner()
