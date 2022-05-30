@@ -1,6 +1,5 @@
+use colosseum::{Input, Window};
 use std::f32::consts::PI;
-
-use colosseum::{Input, Vertex, Window};
 
 enum CurrentWave {
     Wave1,
@@ -22,8 +21,8 @@ struct Settings {
 }
 
 pub struct Simulation {
-    num_points_x: usize,
-    num_points_y: usize,
+    num_thread_groups_x: usize,
+    num_thread_groups_y: usize,
     width: f32,
     height: f32,
     dx: f32,
@@ -31,9 +30,11 @@ pub struct Simulation {
     current_wave: CurrentWave,
 
     // Wave buffers
-    wave1: alexandria::compute::RWBuffer<Vertex>,
-    wave2: alexandria::compute::RWBuffer<Vertex>,
-    wave3: alexandria::compute::RWBuffer<Vertex>,
+    wave1: alexandria::compute::Buffer<f32>,
+    wave2: alexandria::compute::Buffer<f32>,
+    wave3: alexandria::compute::Buffer<f32>,
+
+    output: alexandria::Texture,
 
     // Constant buffer
     settings: alexandria::ConstantBuffer<Settings>,
@@ -41,6 +42,11 @@ pub struct Simulation {
     // Compute shader
     compute_shader: alexandria::compute::ComputeShader,
 }
+
+const PREVIOUS_WAVE_SLOT: usize = 0;
+const CURRENT_WAVE_SLOT: usize = 1;
+const NEXT_WAVE_SLOT: usize = 2;
+const OUTPUT_SLOT: usize = 3;
 
 impl Simulation {
     pub fn new<I: Input>(
@@ -62,15 +68,16 @@ impl Simulation {
         let compute_shader =
             alexandria::compute::ComputeShader::new(shader_code, window.inner()).unwrap();
 
-        let mut vertices = Vec::with_capacity(num_points_x * num_points_y);
+        let mut values = Vec::with_capacity(num_points_x * num_points_y);
         let base_x = -(width / 2.0);
         let base_y = -(height / 2.0);
 
-        const WAVE_COUNT: usize = 3;
-        let _kx = WAVE_COUNT as f32 * PI / width;
-        let _ky = WAVE_COUNT as f32 * PI / height;
+        const WAVE_COUNT_X: usize = 3;
+        const WAVE_COUNT_Y: usize = 2;
+        let _kx = WAVE_COUNT_X as f32 * PI / width;
+        let _ky = WAVE_COUNT_Y as f32 * PI / height;
 
-        let inv_pi_sqrt = 1.0 / PI.sqrt();
+        let _inv_pi_sqrt = 1.0 / PI.sqrt();
 
         for y in 0..num_points_y {
             for x in 0..num_points_x {
@@ -78,22 +85,32 @@ impl Simulation {
                 let z = base_y + y as f32 * dy;
 
                 // Single "particle" wave
-                let y = inv_pi_sqrt * 1.0 / x * x.sin() * 0.5;
+                //let y = _inv_pi_sqrt * 1.0 / x * x.sin() * 0.5;
 
                 // Standing wave
-                /*let y = if WAVE_COUNT % 2 == 0 {
-                    (_kx * x).sin() * (_ky * z).sin()
+                let y = if WAVE_COUNT_X % 2 == 0 {
+                    (_kx * x).sin()
                 } else {
-                    (_kx * x).cos() * (_ky * z).cos()
-                } * 0.25;*/
+                    (_kx * x).cos()
+                } * if WAVE_COUNT_Y % 2 == 0 {
+                    (_ky * z).sin()
+                } else {
+                    (_ky * z).cos()
+                } * 0.25;
 
-                vertices.push(Vertex::new(x, y, z, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0));
+                values.push(y);
             }
         }
 
-        let wave1 = alexandria::compute::RWBuffer::new(&vertices, 1, window.inner()).unwrap();
-        let wave2 = alexandria::compute::RWBuffer::new(&vertices, 2, window.inner()).unwrap();
-        let wave3 = alexandria::compute::RWBuffer::new(&vertices, 0, window.inner()).unwrap();
+        let wave1 =
+            alexandria::compute::Buffer::new(&values, CURRENT_WAVE_SLOT, window.inner()).unwrap();
+        let wave2 =
+            alexandria::compute::Buffer::new(&values, NEXT_WAVE_SLOT, window.inner()).unwrap();
+        let wave3 =
+            alexandria::compute::Buffer::new(&values, PREVIOUS_WAVE_SLOT, window.inner()).unwrap();
+
+        let output =
+            alexandria::Texture::new_1f(&values, num_points_x, OUTPUT_SLOT, window.inner());
 
         let settings = Settings {
             r: c * c * dt * dt,
@@ -108,8 +125,8 @@ impl Simulation {
         let settings = alexandria::ConstantBuffer::new(Some(settings), 0, window.inner()).unwrap();
 
         Simulation {
-            num_points_x,
-            num_points_y,
+            num_thread_groups_x: num_points_x / 16,
+            num_thread_groups_y: num_points_y / 16,
             width,
             height,
             dx,
@@ -119,16 +136,17 @@ impl Simulation {
             wave1,
             wave2,
             wave3,
+            output,
             settings,
         }
     }
 
     pub fn num_points_x(&self) -> usize {
-        self.num_points_x
+        self.num_thread_groups_x * 16
     }
 
     pub fn num_points_y(&self) -> usize {
-        self.num_points_y
+        self.num_thread_groups_y * 16
     }
 
     pub fn width(&self) -> f32 {
@@ -148,22 +166,32 @@ impl Simulation {
     }
 
     pub fn update<I: Input>(&mut self, window: &mut Window<I>) {
+        self.previous_wave().set_slot(PREVIOUS_WAVE_SLOT);
+        self.current_wave().set_slot(CURRENT_WAVE_SLOT);
+        self.next_wave().set_slot(NEXT_WAVE_SLOT);
+
         self.compute_shader.set_active(window.inner());
-        self.wave1.set_active(window.inner());
-        self.wave2.set_active(window.inner());
-        self.wave3.set_active(window.inner());
+        self.previous_wave().set_active_rw(window.inner());
+        self.current_wave().set_active_rw(window.inner());
+        self.next_wave().set_active_rw(window.inner());
+        self.output.set_active_compute_rw(window.inner());
         self.settings.set_active_compute(window.inner());
+
         self.compute_shader.dispatch(
-            self.num_points_x / 16,
-            self.num_points_y / 16,
+            self.num_thread_groups_x,
+            self.num_thread_groups_y,
             1,
             window.inner(),
         );
 
-        self.set_next_wave()
+        self.set_next_wave();
     }
 
-    pub fn current_wave(&mut self) -> &mut alexandria::compute::RWBuffer<Vertex> {
+    pub fn output(&mut self) -> &mut alexandria::Texture {
+        &mut self.output
+    }
+
+    fn current_wave(&mut self) -> &mut alexandria::compute::Buffer<f32> {
         match self.current_wave {
             CurrentWave::Wave1 => &mut self.wave1,
             CurrentWave::Wave2 => &mut self.wave2,
@@ -171,26 +199,27 @@ impl Simulation {
         }
     }
 
+    fn next_wave(&mut self) -> &mut alexandria::compute::Buffer<f32> {
+        match self.current_wave {
+            CurrentWave::Wave1 => &mut self.wave2,
+            CurrentWave::Wave2 => &mut self.wave3,
+            CurrentWave::Wave3 => &mut self.wave1,
+        }
+    }
+
+    fn previous_wave(&mut self) -> &mut alexandria::compute::Buffer<f32> {
+        match self.current_wave {
+            CurrentWave::Wave1 => &mut self.wave3,
+            CurrentWave::Wave2 => &mut self.wave1,
+            CurrentWave::Wave3 => &mut self.wave2,
+        }
+    }
+
     fn set_next_wave(&mut self) {
         self.current_wave = match self.current_wave {
-            CurrentWave::Wave1 => {
-                self.wave1.set_slot(1);
-                self.wave2.set_slot(2);
-                self.wave3.set_slot(0);
-                CurrentWave::Wave2
-            }
-            CurrentWave::Wave2 => {
-                self.wave1.set_slot(0);
-                self.wave2.set_slot(1);
-                self.wave3.set_slot(2);
-                CurrentWave::Wave3
-            }
-            CurrentWave::Wave3 => {
-                self.wave1.set_slot(2);
-                self.wave2.set_slot(0);
-                self.wave3.set_slot(1);
-                CurrentWave::Wave1
-            }
+            CurrentWave::Wave1 => CurrentWave::Wave2,
+            CurrentWave::Wave2 => CurrentWave::Wave3,
+            CurrentWave::Wave3 => CurrentWave::Wave1,
         };
     }
 }

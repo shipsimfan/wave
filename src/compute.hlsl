@@ -17,14 +17,11 @@ cbuffer Settings {
     float reserved;
 }
 
-RWStructuredBuffer<Vertex> previous_wave : register(u0);
-RWStructuredBuffer<Vertex> current_wave : register(u1);
-RWStructuredBuffer<Vertex> next_wave : register(u2);
+RWStructuredBuffer<float> previous_wave : register(u0);
+RWStructuredBuffer<float> current_wave : register(u1);
+RWStructuredBuffer<float> next_wave : register(u2);
 
-float4 f_to_color(float f) {
-    float value = saturate(f + 0.5);
-    return float4(value, 0, 1.0 - value, 1.0);
-}
+RWTexture2D<float> output: register(u3);
 
 uint index(uint x, uint y) {
     return x + y * NUM_POINTS_X;
@@ -39,12 +36,12 @@ void compute_main(uint3 tid : SV_DispatchThreadID) {
     uint y_l_index = index(tid.x, tid.y - 1);
 
     // Gather values
-    float f_now = current_wave[idx].position.y;
-    float f_prev = previous_wave[idx].position.y;
-    float f_x_u = current_wave[x_u_index].position.y;
-    float f_x_l = current_wave[x_l_index].position.y;
-    float f_y_u = current_wave[y_u_index].position.y;
-    float f_y_l = current_wave[y_l_index].position.y;
+    float f_now = current_wave[idx];
+    float f_prev = previous_wave[idx];
+    float f_x_u = current_wave[x_u_index];
+    float f_x_l = current_wave[x_l_index];
+    float f_y_u = current_wave[y_u_index];
+    float f_y_l = current_wave[y_l_index];
 
     // Compute new value
     float f_now_2 = 2.0 * f_now;
@@ -55,8 +52,8 @@ void compute_main(uint3 tid : SV_DispatchThreadID) {
     float f_new = f_now_2 - f_prev + R * (f_x + f_y);
 
     // Set new value
-    next_wave[idx].color = f_to_color(f_new);
-    next_wave[idx].position.y = f_new;
+    next_wave[idx] = f_new;
+    output[tid.xy] = f_new;
 }
 
 

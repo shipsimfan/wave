@@ -3,20 +3,24 @@ use colosseum::{Input, Vertex, Window};
 
 pub struct Renderer {
     mesh: alexandria::Mesh<Vertex>,
+    shader: colosseum::Shader,
+    texture: alexandria::Texture,
 }
 
 impl Renderer {
-    pub fn new<I: Input>(simulation: &Simulation, window: &mut Window<I>) -> Self {
-        let mut vertices =
-            Vec::with_capacity(simulation.num_points_x() * simulation.num_points_y());
-        let mut indices = Vec::with_capacity(
-            (simulation.num_points_x() - 1) * (simulation.num_points_y() - 1) * 6,
-        );
+    pub fn new<I: Input>(
+        simulation: &Simulation,
+        num_points_x: usize,
+        num_points_y: usize,
+        window: &mut Window<I>,
+    ) -> Self {
+        let mut vertices = Vec::with_capacity(num_points_x * num_points_y);
+        let mut indices = Vec::with_capacity((num_points_x - 1) * (num_points_y - 1) * 6);
 
         let base_x = -(simulation.width() / 2.0);
         let base_y = -(simulation.height() / 2.0);
-        for y in 0..simulation.num_points_y() {
-            for x in 0..simulation.num_points_x() {
+        for y in 0..num_points_y {
+            for x in 0..num_points_x {
                 vertices.push(Vertex::new(
                     base_x + (x as f32) * simulation.dx(),
                     0.0,
@@ -25,15 +29,15 @@ impl Renderer {
                     1.0,
                     1.0,
                     1.0,
-                    0.0,
-                    0.0,
+                    x as f32 / num_points_x as f32,
+                    y as f32 / num_points_y as f32,
                 ));
 
-                if x != simulation.num_points_x() - 1 && y != simulation.num_points_y() - 1 {
-                    let zero = (x + y * simulation.num_points_x()) as u32;
-                    let one = (x + (y + 1) * simulation.num_points_x()) as u32;
-                    let two = (x + 1 + (y + 1) * simulation.num_points_x()) as u32;
-                    let three = (x + 1 + y * simulation.num_points_x()) as u32;
+                if x != num_points_x - 1 && y != num_points_y - 1 {
+                    let zero = (x + y * num_points_x) as u32;
+                    let one = (x + (y + 1) * num_points_x) as u32;
+                    let two = (x + 1 + (y + 1) * num_points_x) as u32;
+                    let three = (x + 1 + y * num_points_x) as u32;
 
                     indices.push(zero);
                     indices.push(one);
@@ -48,18 +52,34 @@ impl Renderer {
         let mesh =
             alexandria::Mesh::new(vertices.as_slice(), indices.as_slice(), window.inner()).unwrap();
 
-        Renderer { mesh }
+        let shader = colosseum::Shader::new(include_str!("shader.hlsl"), window);
+
+        let initial_values = vec![0.0; simulation.num_points_x() * simulation.num_points_y()];
+        let texture = alexandria::Texture::new_1f(
+            initial_values.as_slice(),
+            simulation.num_points_x(),
+            0,
+            window.inner(),
+        );
+
+        Renderer {
+            mesh,
+            shader,
+            texture,
+        }
     }
 
     pub fn update<I: Input>(&mut self, simulation: &mut Simulation, window: &mut Window<I>) {
-        alexandria::compute::copy_compute_to_vertex(
-            simulation.current_wave(),
-            &mut self.mesh,
-            window.inner(),
-        );
+        window.inner().device_context().flush();
+        window
+            .inner()
+            .device_context()
+            .copy_resource(self.texture.inner_mut(), simulation.output().inner_mut())
     }
 
     pub fn render<I: Input>(&mut self, window: &mut Window<I>) {
+        self.shader.set_active(window);
+        self.texture.set_active(window.inner());
         self.mesh.render(window.inner());
     }
 }

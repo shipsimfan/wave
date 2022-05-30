@@ -35,7 +35,7 @@ impl colosseum::Game for Game {
 
     fn new(window: &mut colosseum::Window<Self::Input>) -> Self {
         let simulation = Simulation::new(NUM_POINTS_X, DX, NUM_POINTS_Y, DY, DT, C, window);
-        let renderer = Renderer::new(&simulation, window);
+        let renderer = Renderer::new(&simulation, NUM_POINTS_X, NUM_POINTS_Y, window);
         let observer = Observer::new(window);
 
         Game {
