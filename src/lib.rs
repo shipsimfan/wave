@@ -8,29 +8,33 @@ mod renderer;
 mod simulation;
 mod simulation_runner;
 
-pub use simulation::Simulation;
+pub use simulation::{RenderSettings, Simulation, SimulationSettings};
 
 struct Game<S: Simulation> {
     observer: Observer,
-    simulation: SimulationRunner,
+    simulation_runner: SimulationRunner,
     renderer: Renderer,
     tick_time: f32,
     phantom: PhantomData<S>,
 }
 
-pub fn run<S: Simulation>(simulation: S) {}
+pub fn run<S: Simulation>() -> ! {
+    colosseum::App::<Game<S>>::new();
+}
 
 impl<S: Simulation> colosseum::Game for Game<S> {
     const INITIAL_TITLE: &'static str = "Wave Simulator";
 
     fn new(window: &mut colosseum::Window<Self::Input>) -> Self {
-        let simulation = SimulationRunner::new(0, 0.0, 0, 0.0, 0.0, 0.0, window);
-        let renderer = Renderer::new(&simulation, 0, 0, window);
+        let simulation = S::new();
+
+        let simulation_runner = SimulationRunner::new(&simulation, window);
+        let renderer = Renderer::new(&simulation_runner, &simulation, window);
         let observer = Observer::new(window);
 
         Game {
             observer,
-            simulation,
+            simulation_runner,
             renderer,
             tick_time: 0.0,
             phantom: PhantomData,
@@ -43,13 +47,13 @@ impl<S: Simulation> colosseum::Game for Game<S> {
 
         // Physics update
         self.tick_time += delta_time;
-        if self.tick_time >= 0.0 {
-            while self.tick_time >= 0.0 {
-                self.simulation.update(window);
-                self.tick_time -= 0.0;
+        if self.tick_time >= self.simulation_runner.dt() {
+            while self.tick_time >= self.simulation_runner.dt() {
+                self.simulation_runner.update(window);
+                self.tick_time -= self.simulation_runner.dt();
             }
 
-            self.renderer.update(&mut self.simulation, window);
+            self.renderer.update(&mut self.simulation_runner, window);
         }
     }
 

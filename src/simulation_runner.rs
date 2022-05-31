@@ -1,5 +1,5 @@
+use crate::Simulation;
 use colosseum::{Input, Window};
-use std::f32::consts::PI;
 
 enum CurrentWave {
     Wave1,
@@ -27,6 +27,7 @@ pub struct SimulationRunner {
     height: f32,
     dx: f32,
     dy: f32,
+    dt: f32,
     current_wave: CurrentWave,
 
     // Wave buffers
@@ -37,7 +38,7 @@ pub struct SimulationRunner {
     output: alexandria::Texture,
 
     // Constant buffer
-    settings: alexandria::ConstantBuffer<Settings>,
+    settings_buffer: alexandria::ConstantBuffer<Settings>,
 
     // Compute shader
     compute_shader: alexandria::compute::ComputeShader,
@@ -49,56 +50,28 @@ const NEXT_WAVE_SLOT: usize = 2;
 const OUTPUT_SLOT: usize = 3;
 
 impl SimulationRunner {
-    pub fn new<I: Input>(
-        num_points_x: usize,
-        dx: f32,
-        num_points_y: usize,
-        dy: f32,
-        dt: f32,
-        c: f32,
-        window: &mut Window<I>,
-    ) -> Self {
-        assert_eq!(num_points_x % 16, 0);
-        assert_eq!(num_points_y % 16, 0);
+    pub fn new<I: Input, S: Simulation>(simulation: &S, window: &mut Window<I>) -> Self {
+        let settings = simulation.simulation_settings();
 
-        let width = ((num_points_x - 1) as f32) * dx;
-        let height = ((num_points_y - 1) as f32) * dy;
+        assert_eq!(settings.num_points_x() % 16, 0);
+        assert_eq!(settings.num_points_y() % 16, 0);
+
+        let width = ((settings.num_points_x() - 1) as f32) * settings.dx();
+        let height = ((settings.num_points_y() - 1) as f32) * settings.dy();
 
         let shader_code = include_str!("compute.hlsl");
         let compute_shader =
             alexandria::compute::ComputeShader::new(shader_code, window.inner()).unwrap();
 
-        let mut values = Vec::with_capacity(num_points_x * num_points_y);
+        let mut values = Vec::with_capacity(settings.num_points_x() * settings.num_points_y());
         let base_x = -(width / 2.0);
         let base_y = -(height / 2.0);
+        for y in 0..settings.num_points_y() {
+            for x in 0..settings.num_points_x() {
+                let x = base_x + x as f32 * settings.dx();
+                let y = base_y + y as f32 * settings.dy();
 
-        const WAVE_COUNT_X: usize = 3;
-        const WAVE_COUNT_Y: usize = 2;
-        let _kx = WAVE_COUNT_X as f32 * PI / width;
-        let _ky = WAVE_COUNT_Y as f32 * PI / height;
-
-        let _inv_pi_sqrt = 1.0 / PI.sqrt();
-
-        for y in 0..num_points_y {
-            for x in 0..num_points_x {
-                let x = base_x + x as f32 * dx;
-                let z = base_y + y as f32 * dy;
-
-                // Single "particle" wave
-                //let y = _inv_pi_sqrt * 1.0 / x * x.sin() * 0.5;
-
-                // Standing wave
-                let y = if WAVE_COUNT_X % 2 == 0 {
-                    (_kx * x).sin()
-                } else {
-                    (_kx * x).cos()
-                } * if WAVE_COUNT_Y % 2 == 0 {
-                    (_ky * z).sin()
-                } else {
-                    (_ky * z).cos()
-                } * 0.25;
-
-                values.push(y);
+                values.push(simulation.psi_0(x, y));
             }
         }
 
@@ -109,35 +82,41 @@ impl SimulationRunner {
         let wave3 =
             alexandria::compute::Buffer::new(&values, PREVIOUS_WAVE_SLOT, window.inner()).unwrap();
 
-        let output =
-            alexandria::Texture::new_1f(&values, num_points_x, OUTPUT_SLOT, window.inner());
+        let output = alexandria::Texture::new_1f(
+            &values,
+            settings.num_points_x(),
+            OUTPUT_SLOT,
+            window.inner(),
+        );
 
-        let settings = Settings {
-            r: c * c * dt * dt,
-            dx,
-            dy,
-            dt,
+        let settings_buffer = Settings {
+            r: settings.c() * settings.c() * settings.dt() * settings.dt(),
+            dx: settings.dx(),
+            dy: settings.dy(),
+            dt: settings.dt(),
             color_mod: 3.0,
-            num_points_x: num_points_x as u32,
-            num_points_y: num_points_y as u32,
+            num_points_x: settings.num_points_x() as u32,
+            num_points_y: settings.num_points_y() as u32,
             reserved: 0.0,
         };
-        let settings = alexandria::ConstantBuffer::new(Some(settings), 0, window.inner()).unwrap();
+        let settings_buffer =
+            alexandria::ConstantBuffer::new(Some(settings_buffer), 0, window.inner()).unwrap();
 
         SimulationRunner {
-            num_thread_groups_x: num_points_x / 16,
-            num_thread_groups_y: num_points_y / 16,
+            num_thread_groups_x: settings.num_points_x() / 16,
+            num_thread_groups_y: settings.num_points_y() / 16,
             width,
             height,
-            dx,
-            dy,
+            dx: settings.dx(),
+            dy: settings.dy(),
+            dt: settings.dt(),
             current_wave: CurrentWave::Wave1,
             compute_shader,
             wave1,
             wave2,
             wave3,
             output,
-            settings,
+            settings_buffer,
         }
     }
 
@@ -165,6 +144,10 @@ impl SimulationRunner {
         self.dy
     }
 
+    pub fn dt(&self) -> f32 {
+        self.dt
+    }
+
     pub fn update<I: Input>(&mut self, window: &mut Window<I>) {
         self.previous_wave().set_slot(PREVIOUS_WAVE_SLOT);
         self.current_wave().set_slot(CURRENT_WAVE_SLOT);
@@ -175,7 +158,7 @@ impl SimulationRunner {
         self.current_wave().set_active_rw(window.inner());
         self.next_wave().set_active_rw(window.inner());
         self.output.set_active_compute_rw(window.inner());
-        self.settings.set_active_compute(window.inner());
+        self.settings_buffer.set_active_compute(window.inner());
 
         self.compute_shader.dispatch(
             self.num_thread_groups_x,
