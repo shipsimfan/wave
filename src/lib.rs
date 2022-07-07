@@ -15,6 +15,7 @@ struct Game<S: Simulation> {
     simulation_runner: SimulationRunner,
     renderer: Renderer,
     tick_time: f32,
+    time_scale: f32,
     phantom: PhantomData<S>,
 }
 
@@ -37,6 +38,7 @@ impl<S: Simulation> colosseum::Game for Game<S> {
             simulation_runner,
             renderer,
             tick_time: 0.0,
+            time_scale: simulation.time_scale(),
             phantom: PhantomData,
         }
     }
@@ -46,7 +48,7 @@ impl<S: Simulation> colosseum::Game for Game<S> {
         self.observer.update(delta_time, window);
 
         // Physics update
-        self.tick_time += delta_time;
+        self.tick_time += delta_time / self.time_scale;
         if self.tick_time >= self.simulation_runner.dt() {
             while self.tick_time >= self.simulation_runner.dt() {
                 self.simulation_runner.update(window);

@@ -1,4 +1,4 @@
-use common::{COMMON_RENDER_SETTINGS, COMMON_SIMULATION_SETTINGS};
+use common::{COMMON_RENDER_SETTINGS, COMMON_SIMULATION_SETTINGS, TIME_SCALE};
 
 mod common;
 
@@ -21,7 +21,11 @@ impl wave::Simulation for EmptySimulation {
         COMMON_RENDER_SETTINGS
     }
 
-    fn psi_0(&self, _: f32, _: f32) -> f32 {
-        0.0
+    fn time_scale(&self) -> f32 {
+        TIME_SCALE
+    }
+
+    fn psi_0(&self, _: f32, _: f32) -> (f32, f32) {
+        (0.0, 0.0)
     }
 }

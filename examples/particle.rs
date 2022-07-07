@@ -1,5 +1,4 @@
-use common::{COMMON_RENDER_SETTINGS, COMMON_SIMULATION_SETTINGS};
-use std::f32::consts::PI;
+use common::*;
 
 mod common;
 
@@ -22,7 +21,11 @@ impl wave::Simulation for ParticleSimulation {
         COMMON_RENDER_SETTINGS
     }
 
-    fn psi_0(&self, x: f32, y: f32) -> f32 {
-        1.0 / (75.0 * x * y) * (4.0 * PI * x).sin() * (4.0 * PI * y).sin()
+    fn time_scale(&self) -> f32 {
+        TIME_SCALE
+    }
+
+    fn psi_0(&self, x: f32, y: f32) -> (f32, f32) {
+        (1.0 - x * XZ_SCALE, 0.0)
     }
 }

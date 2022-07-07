@@ -57,8 +57,11 @@ impl Renderer {
             window,
         ));
 
-        mesh.transform_mut()
-            .set_scale(colosseum::Vector3::new(1.0, settings.y_scale(), 1.0));
+        mesh.transform_mut().set_scale(colosseum::Vector3::new(
+            settings.xz_scale(),
+            settings.y_scale(),
+            settings.xz_scale(),
+        ));
 
         let shader = colosseum::Shader::new(include_str!("shader.hlsl"), window);
 

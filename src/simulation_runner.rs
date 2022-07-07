@@ -1,5 +1,6 @@
 use crate::Simulation;
 use colosseum::{Input, Window};
+use std::f32::consts::PI;
 
 enum CurrentWave {
     Wave1,
@@ -9,15 +10,12 @@ enum CurrentWave {
 
 #[repr(C)]
 struct Settings {
-    r: f32,
-    dx: f32,
-    dy: f32,
-    dt: f32,
-
-    color_mod: f32,
+    dth_2mi: (f32, f32), // dt * h_bar / (2 * m * i)
+    dx2: f32,            // dx ^ 2
+    dy2: f32,            // dy ^ 2
     num_points_x: u32,
     num_points_y: u32,
-    reserved: f32,
+    reserved: (f32, f32),
 }
 
 pub struct SimulationRunner {
@@ -31,9 +29,9 @@ pub struct SimulationRunner {
     current_wave: CurrentWave,
 
     // Wave buffers
-    wave1: alexandria::compute::Buffer<f32>,
-    wave2: alexandria::compute::Buffer<f32>,
-    wave3: alexandria::compute::Buffer<f32>,
+    wave1: alexandria::compute::Buffer<(f32, f32)>,
+    wave2: alexandria::compute::Buffer<(f32, f32)>,
+    wave3: alexandria::compute::Buffer<(f32, f32)>,
 
     output: alexandria::Texture,
 
@@ -49,6 +47,9 @@ const CURRENT_WAVE_SLOT: usize = 1;
 const NEXT_WAVE_SLOT: usize = 2;
 const OUTPUT_SLOT: usize = 3;
 
+const H: f32 = 6.62607015e-34;
+const H_BAR: f32 = H / (2.0 * PI);
+
 impl SimulationRunner {
     pub fn new<I: Input, S: Simulation>(simulation: &S, window: &mut Window<I>) -> Self {
         let settings = simulation.simulation_settings();
@@ -63,7 +64,9 @@ impl SimulationRunner {
         let compute_shader =
             alexandria::compute::ComputeShader::new(shader_code, window.inner()).unwrap();
 
-        let mut values = Vec::with_capacity(settings.num_points_x() * settings.num_points_y());
+        let mut wave_values = Vec::with_capacity(settings.num_points_x() * settings.num_points_y());
+        let mut output_values =
+            Vec::with_capacity(settings.num_points_x() * settings.num_points_y());
         let base_x = -(width / 2.0);
         let base_y = -(height / 2.0);
         for y in 0..settings.num_points_y() {
@@ -71,33 +74,35 @@ impl SimulationRunner {
                 let x = base_x + x as f32 * settings.dx();
                 let y = base_y + y as f32 * settings.dy();
 
-                values.push(simulation.psi_0(x, y));
+                let psi = simulation.psi_0(x, y);
+                wave_values.push(psi);
+                output_values.push(psi.0 * psi.0 + psi.1 * psi.1);
             }
         }
 
         let wave1 =
-            alexandria::compute::Buffer::new(&values, CURRENT_WAVE_SLOT, window.inner()).unwrap();
+            alexandria::compute::Buffer::new(&wave_values, CURRENT_WAVE_SLOT, window.inner())
+                .unwrap();
         let wave2 =
-            alexandria::compute::Buffer::new(&values, NEXT_WAVE_SLOT, window.inner()).unwrap();
+            alexandria::compute::Buffer::new(&wave_values, NEXT_WAVE_SLOT, window.inner()).unwrap();
         let wave3 =
-            alexandria::compute::Buffer::new(&values, PREVIOUS_WAVE_SLOT, window.inner()).unwrap();
+            alexandria::compute::Buffer::new(&wave_values, PREVIOUS_WAVE_SLOT, window.inner())
+                .unwrap();
 
         let output = alexandria::Texture::new_1f(
-            &values,
+            &output_values,
             settings.num_points_x(),
             OUTPUT_SLOT,
             window.inner(),
         );
 
         let settings_buffer = Settings {
-            r: settings.c() * settings.c() * settings.dt() * settings.dt(),
-            dx: settings.dx(),
-            dy: settings.dy(),
-            dt: settings.dt(),
-            color_mod: 3.0,
+            dth_2mi: (0.0, -settings.dt() * H_BAR / (2.0 * settings.mass())),
+            dx2: settings.dx() * settings.dx(),
+            dy2: settings.dy() * settings.dy(),
             num_points_x: settings.num_points_x() as u32,
             num_points_y: settings.num_points_y() as u32,
-            reserved: 0.0,
+            reserved: (0.0, 0.0),
         };
         let settings_buffer =
             alexandria::ConstantBuffer::new(Some(settings_buffer), 0, window.inner()).unwrap();
@@ -174,7 +179,7 @@ impl SimulationRunner {
         &mut self.output
     }
 
-    fn current_wave(&mut self) -> &mut alexandria::compute::Buffer<f32> {
+    fn current_wave(&mut self) -> &mut alexandria::compute::Buffer<(f32, f32)> {
         match self.current_wave {
             CurrentWave::Wave1 => &mut self.wave1,
             CurrentWave::Wave2 => &mut self.wave2,
@@ -182,7 +187,7 @@ impl SimulationRunner {
         }
     }
 
-    fn next_wave(&mut self) -> &mut alexandria::compute::Buffer<f32> {
+    fn next_wave(&mut self) -> &mut alexandria::compute::Buffer<(f32, f32)> {
         match self.current_wave {
             CurrentWave::Wave1 => &mut self.wave2,
             CurrentWave::Wave2 => &mut self.wave3,
@@ -190,7 +195,7 @@ impl SimulationRunner {
         }
     }
 
-    fn previous_wave(&mut self) -> &mut alexandria::compute::Buffer<f32> {
+    fn previous_wave(&mut self) -> &mut alexandria::compute::Buffer<(f32, f32)> {
         match self.current_wave {
             CurrentWave::Wave1 => &mut self.wave3,
             CurrentWave::Wave2 => &mut self.wave1,

@@ -43,16 +43,23 @@ impl wave::Simulation for StandingWaveSimulation {
         COMMON_RENDER_SETTINGS
     }
 
-    fn psi_0(&self, x: f32, y: f32) -> f32 {
-        return if self.odd_x {
-            (self.kx * x).cos()
-        } else {
-            (self.kx * x).sin()
-        } * if self.odd_y {
-            (self.ky * y).cos()
-        } else {
-            (self.ky * y).sin()
-        };
+    fn time_scale(&self) -> f32 {
+        TIME_SCALE
+    }
+
+    fn psi_0(&self, x: f32, y: f32) -> (f32, f32) {
+        (
+            if self.odd_x {
+                (self.kx * x).cos()
+            } else {
+                (self.kx * x).sin()
+            } * if self.odd_y {
+                (self.ky * y).cos()
+            } else {
+                (self.ky * y).sin()
+            },
+            0.0,
+        )
     }
 }
 
